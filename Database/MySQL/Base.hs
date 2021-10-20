@@ -90,6 +90,7 @@ import           Database.MySQL.Query
 import           System.IO.Streams                  (InputStream)
 import qualified System.IO.Streams                  as Stream
 import qualified Data.Vector                        as V
+import System.Timeout (timeout)
 
 --------------------------------------------------------------------------------
 
@@ -212,6 +213,7 @@ queryVector_ conn@(MySQLConn is os _ consumed) (Query qry) = do
 prepareStmt :: MySQLConn -> Query -> IO StmtID
 prepareStmt conn@(MySQLConn is os _ _) (Query stmt) = do
     guardUnconsumed conn
+    _ <- timeout 1 $ readPacket is -- eof
     writeCommand (COM_STMT_PREPARE stmt) os
     p <- readPacket is
     if isERR p
@@ -232,6 +234,7 @@ prepareStmt conn@(MySQLConn is os _ _) (Query stmt) = do
 prepareStmtDetail :: MySQLConn -> Query -> IO (StmtPrepareOK, [ColumnDef], [ColumnDef])
 prepareStmtDetail conn@(MySQLConn is os _ _) (Query stmt) = do
     guardUnconsumed conn
+    _ <- timeout 1 $ readPacket is -- eof
     writeCommand (COM_STMT_PREPARE stmt) os
     p <- readPacket is
     if isERR p
