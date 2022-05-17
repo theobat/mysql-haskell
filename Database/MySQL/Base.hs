@@ -24,6 +24,8 @@ By using this library you will meet:
 Both 'UnexpectedPacket' and 'DecodePacketException' may indicate a bug of this library rather your code, so please report!
 
 -}
+{-# LANGUAGE BangPatterns #-}
+
 module Database.MySQL.Base
     ( -- * Setting up and control connection
       MySQLConn
@@ -53,6 +55,7 @@ module Database.MySQL.Base
     , resetStmt
       -- * Helpers
     , withTransaction
+    , withTransaction'
     , QueryParam(..)
     , Param (..)
     , Query(..)
@@ -327,3 +330,15 @@ withTransaction conn procedure = mask $ \restore -> do
   r <- restore procedure `onException` (execute_ conn "ROLLBACK")
   _ <- execute_ conn "COMMIT"
   pure r
+
+-- | like withTransaction but strictly enforce the begin/commit.
+--
+-- @since 0.2.0.0
+--
+withTransaction' :: MySQLConn -> IO a -> IO a
+withTransaction' !conn procedure = mask $ \restore -> do
+  !_ <- execute_ conn "BEGIN"
+  !r <- restore procedure `onException` (execute_ conn "ROLLBACK")
+  !_ <- execute_ conn "COMMIT"
+  pure r
+
