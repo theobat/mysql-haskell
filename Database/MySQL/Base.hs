@@ -40,6 +40,7 @@ module Database.MySQL.Base
     , execute
     , executeMany
     , executeMany_
+    , executeManyN
     , execute_
     , query_
     , queryVector_
@@ -93,7 +94,6 @@ import           Database.MySQL.Query
 import           System.IO.Streams                  (InputStream)
 import qualified System.IO.Streams                  as Stream
 import qualified Data.Vector                        as V
-import System.Timeout (timeout)
 
 --------------------------------------------------------------------------------
 
@@ -126,6 +126,23 @@ executeMany conn@(MySQLConn is os _ _) qry paramsList = do
 
 {-# SPECIALIZE executeMany :: MySQLConn -> Query -> [[MySQLValue]] -> IO [OK] #-}
 {-# SPECIALIZE executeMany :: MySQLConn -> Query -> [[Param]]      -> IO [OK] #-}
+
+-- | Enable mutiple queries sharing sent as a single semi colon separated string.
+--  This is similar to executeMany but enables a simpler API.
+-- 
+-- @
+--      executeManyN connection 2 "INSERT INTO xx(id) VALUES (?);INSERT INTO yy(id) VALUES (?)" [1, 2]
+-- @
+--
+executeManyN :: QueryParam p => MySQLConn -> Int -> Query -> [p] -> IO [OK]
+executeManyN conn@(MySQLConn is os _ _) expectedQueryNumber qry paramsList = do
+    guardUnconsumed conn
+    let qry' = fromQuery $ renderParams qry paramsList
+    writeCommand (COM_QUERY qry') os
+    replicateM expectedQueryNumber (waitCommandReply is)
+
+{-# SPECIALIZE executeManyN :: MySQLConn -> Int -> Query -> [MySQLValue] -> IO [OK] #-}
+{-# SPECIALIZE executeManyN :: MySQLConn -> Int -> Query -> [Param]      -> IO [OK] #-}
 
 -- | Execute multiple querys (without param) which don't return result-set.
 --
@@ -216,7 +233,6 @@ queryVector_ conn@(MySQLConn is os _ consumed) (Query qry) = do
 prepareStmt :: MySQLConn -> Query -> IO StmtID
 prepareStmt conn@(MySQLConn is os _ _) (Query stmt) = do
     guardUnconsumed conn
-    _ <- timeout 1 $ readPacket is -- eof
     writeCommand (COM_STMT_PREPARE stmt) os
     p <- readPacket is
     if isERR p
@@ -237,7 +253,6 @@ prepareStmt conn@(MySQLConn is os _ _) (Query stmt) = do
 prepareStmtDetail :: MySQLConn -> Query -> IO (StmtPrepareOK, [ColumnDef], [ColumnDef])
 prepareStmtDetail conn@(MySQLConn is os _ _) (Query stmt) = do
     guardUnconsumed conn
-    _ <- timeout 1 $ readPacket is -- eof
     writeCommand (COM_STMT_PREPARE stmt) os
     p <- readPacket is
     if isERR p
